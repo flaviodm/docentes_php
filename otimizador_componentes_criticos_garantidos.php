@@ -1,106 +1,21 @@
 <?php
 
 /**
- * Sistema de Otimização AG + RN - COMPONENTES SEM PARÂMETRO SEMPRE CRÍTICOS
+ * Sistema de Otimização baseado em AG - COMPONENTES SEM PARÂMETRO SEMPRE CRÍTICOS
+ * A antiga rede neural aleatória foi removida e substituída por uma regra
+ * simples que escolhe o docente com maior CH disponível dentre os compatíveis.
  * Garante que componentes sem parâmetro nunca sejam alocados
  */
 
-class RedeNeural {
-    private $pesos_entrada_oculta;
-    private $pesos_oculta_saida;
-    private $bias_oculta;
-    private $bias_saida;
-    private $tamanho_entrada;
-    private $tamanho_oculta;
-    private $tamanho_saida;
-    
-    public function __construct($tamanho_entrada = 5, $tamanho_oculta = 10, $tamanho_saida = 3) {
-        $this->tamanho_entrada = $tamanho_entrada;
-        $this->tamanho_oculta = $tamanho_oculta;
-        $this->tamanho_saida = $tamanho_saida;
-        
-        $this->inicializarPesos();
-    }
-    
-    private function inicializarPesos() {
-        $limite_entrada = sqrt(6.0 / ($this->tamanho_entrada + $this->tamanho_oculta));
-        $limite_saida = sqrt(6.0 / ($this->tamanho_oculta + $this->tamanho_saida));
-        
-        $this->pesos_entrada_oculta = [];
-        for ($i = 0; $i < $this->tamanho_entrada; $i++) {
-            $this->pesos_entrada_oculta[$i] = [];
-            for ($j = 0; $j < $this->tamanho_oculta; $j++) {
-                $this->pesos_entrada_oculta[$i][$j] = (mt_rand() / mt_getrandmax() * 2 - 1) * $limite_entrada;
-            }
-        }
-        
-        $this->pesos_oculta_saida = [];
-        for ($i = 0; $i < $this->tamanho_oculta; $i++) {
-            $this->pesos_oculta_saida[$i] = [];
-            for ($j = 0; $j < $this->tamanho_saida; $j++) {
-                $this->pesos_oculta_saida[$i][$j] = (mt_rand() / mt_getrandmax() * 2 - 1) * $limite_saida;
-            }
-        }
-        
-        $this->bias_oculta = array_fill(0, $this->tamanho_oculta, 0.0);
-        $this->bias_saida = array_fill(0, $this->tamanho_saida, 0.0);
-    }
-    
-    private function relu($x) {
-        return max(0, $x);
-    }
-    
-    public function forward($entrada) {
-        $oculta = [];
-        for ($j = 0; $j < $this->tamanho_oculta; $j++) {
-            $soma = $this->bias_oculta[$j];
-            for ($i = 0; $i < $this->tamanho_entrada; $i++) {
-                $soma += $entrada[$i] * $this->pesos_entrada_oculta[$i][$j];
-            }
-            $oculta[$j] = $this->relu($soma);
-        }
-        
-        $saida = [];
-        for ($k = 0; $k < $this->tamanho_saida; $k++) {
-            $soma = $this->bias_saida[$k];
-            for ($j = 0; $j < $this->tamanho_oculta; $j++) {
-                $soma += $oculta[$j] * $this->pesos_oculta_saida[$j][$k];
-            }
-            $saida[$k] = $this->relu($soma);
-        }
-        
-        return $saida;
-    }
-    
-    public function mutar($taxa_mutacao = 0.1) {
-        for ($i = 0; $i < $this->tamanho_entrada; $i++) {
-            for ($j = 0; $j < $this->tamanho_oculta; $j++) {
-                if (mt_rand() / mt_getrandmax() < $taxa_mutacao) {
-                    $this->pesos_entrada_oculta[$i][$j] += (mt_rand() / mt_getrandmax() * 2 - 1) * 0.1;
-                }
-            }
-        }
-        
-        for ($i = 0; $i < $this->tamanho_oculta; $i++) {
-            for ($j = 0; $j < $this->tamanho_saida; $j++) {
-                if (mt_rand() / mt_getrandmax() < $taxa_mutacao) {
-                    $this->pesos_oculta_saida[$i][$j] += (mt_rand() / mt_getrandmax() * 2 - 1) * 0.1;
-                }
-            }
-        }
-    }
-}
 
 class AlgoritmoGenetico {
     private $dados_originais;
     private $docentes;
     private $hierarquias;
     private $parametros_componentes;
-    private $rede_neural;
     private $indices_alocaveis;
     
     public function __construct() {
-        $this->rede_neural = new RedeNeural();
         $this->dados_originais = [];
         $this->docentes = [];
         $this->hierarquias = [];
@@ -439,14 +354,31 @@ class AlgoritmoGenetico {
         
         return array_unique($docentes_compativeis);
     }
+
+    /**
+     * Escolhe o docente com a maior CH disponível dentre os compatíveis
+     */
+    private function escolherDocenteMaisDisponivel($docentes_compativeis) {
+        $melhor = $docentes_compativeis[0];
+        $maior_ch = $this->docentes[$melhor]['ch_disponivel'];
+
+        foreach ($docentes_compativeis as $mat) {
+            if (isset($this->docentes[$mat]) && $this->docentes[$mat]['ch_disponivel'] > $maior_ch) {
+                $maior_ch = $this->docentes[$mat]['ch_disponivel'];
+                $melhor = $mat;
+            }
+        }
+
+        return $melhor;
+    }
     
     private function gerarIndividuoAleatorio() {
         $individuo = [];
-        
+
         foreach ($this->indices_alocaveis as $indice) {
             $dados = $this->dados_originais[$indice];
             $docentes_compativeis = $dados['docentes_compativeis'];
-            $docente_escolhido = $docentes_compativeis[array_rand($docentes_compativeis)];
+            $docente_escolhido = $this->escolherDocenteMaisDisponivel($docentes_compativeis);
             $individuo[$indice] = $docente_escolhido;
         }
         
@@ -539,24 +471,12 @@ class AlgoritmoGenetico {
     
     private function mutacao($individuo) {
         $taxa_mutacao = 0.15;
-        
+
         foreach ($individuo as $indice => $docente_atual) {
             if (mt_rand() / mt_getrandmax() < $taxa_mutacao) {
                 $dados = $this->dados_originais[$indice];
                 $docentes_compativeis = $dados['docentes_compativeis'];
-                
-                $entrada = [
-                    $dados['quantidade'] / 100.0,
-                    count($docentes_compativeis) / 10.0,
-                    $this->parametros_componentes[$dados['componente']] / 100.0,
-                    intval($dados['curso']) / 1000.0,
-                    mt_rand() / mt_getrandmax()
-                ];
-                
-                $saida_rn = $this->rede_neural->forward($entrada);
-                $indice_escolhido = array_search(max($saida_rn), $saida_rn) % count($docentes_compativeis);
-                
-                $individuo[$indice] = $docentes_compativeis[$indice_escolhido];
+                $individuo[$indice] = $this->escolherDocenteMaisDisponivel($docentes_compativeis);
             }
         }
         
@@ -644,11 +564,9 @@ class AlgoritmoGenetico {
             
             $populacao = $nova_populacao;
             
-            // Mutar rede neural
+            // Pequena aleatoriedade para evitar estagnação
             if ($geracoes_sem_melhoria > 10) {
-                $this->rede_neural->mutar(0.2);
-            } else {
-                $this->rede_neural->mutar(0.05);
+                shuffle($populacao);
             }
             
             if ($geracao % 20 == 0) {
